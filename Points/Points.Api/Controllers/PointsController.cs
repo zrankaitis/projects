@@ -40,6 +40,8 @@ namespace Points.Controllers
         {
             try
             {
+                transaction.UserId = userId;
+
                 Service.AddPoints(userId, transaction);
 
                 return Created("points", userId);
