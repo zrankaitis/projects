@@ -59,7 +59,7 @@ namespace Points.Controllers
         public ActionResult Delete(string userId, int amount)
         {
             try {
-                var transactions = Service.DeletePoints(userId, amount);
+                var transactions = Service.DeductPoints(userId, amount);
                 return Ok(transactions);
             }
             catch (InsufficientBalanceException ex)

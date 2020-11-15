@@ -33,45 +33,37 @@ namespace Points.Application
                     .Where(b => b.PayerName == transaction.PayerName)
                     .OrderBy(b => b.TransactionDate).ToArray();
 
-                int balanceIndex = 0;
-                while (totalDeduction > 0)
-                {
-                    // Potential for refactoring here as this is largely the same logic as DeletePoints()
-                    if (balanceIndex >= transactions.Length)
-                        throw new InsufficientBalanceException();
-
-                    var oldestBalance = transactions[balanceIndex];
-
-                    if (oldestBalance == null)
-                        throw new InsufficientBalanceException();
-
-                    if (oldestBalance.Points > totalDeduction)
-                    {
-                        oldestBalance.Points -= totalDeduction;
-                        totalDeduction = 0;
-                    }
-                    else
-                    {
-                        totalDeduction -= oldestBalance.Points;
-                        oldestBalance.Points = 0; // 0 balances should be preserved, per Unilever example 
-                    }
-
-                    balanceIndex += 1;
-                }
+                DeductPointsFromTransactionArray(transactions, userId, -transaction.Points);
 
                 Repository.UpdatePointsTransactions(transactions);
             }
         }
 
-        public IEnumerable<PointsTransaction> DeletePoints(string userId, int amount)
+        public IEnumerable<PointsTransaction> DeductPoints(string userId, int amount)
         {
             var balances = Repository.GetPointsTransactionsByUserId(userId)
                 .OrderBy(b => b.TransactionDate).ToArray();
-            
-            var transactions = new List<PointsTransaction>();
+
+            var transactions = DeductPointsFromTransactionArray(balances, userId, amount);
+
+            Repository.UpdatePointsTransactions(balances);
+
+            return transactions;
+        }
+
+        /// <summary>
+        /// Helper function to deduct points from a sorted array of PointsTransaction.
+        /// </summary>
+        /// <param name="balances">A sorted array of transactions from which to perform the delete operation on.</param>
+        /// <param name="userId">The UserId associated with transactions to be deleted.</param>
+        /// <param name="amount">The amount to deduct.</param>
+        /// <returns>Returns a list of transactions that the deduction operation affected.</returns>
+        private IEnumerable<PointsTransaction> DeductPointsFromTransactionArray(PointsTransaction[] balances, string userId, int amount)
+        {
+            var summaries = new List<PointsTransaction>();
 
             int balanceIndex = 0;
-            while(amount > 0)
+            while (amount > 0)
             {
                 if (balanceIndex >= balances.Length)
                     throw new InsufficientBalanceException();
@@ -94,20 +86,19 @@ namespace Points.Application
                 {
                     transaction.Points = -amount;
                     oldestBalance.Points -= amount;
-                    transactions.Add(transaction);
+                    summaries.Add(transaction);
                     amount = 0;
-                } else
+                }
+                else
                 {
                     amount -= oldestBalance.Points;
                     transaction.Points = -oldestBalance.Points;
                     oldestBalance.Points = 0; // 0 balances should be preserved, per Unilever example 
-                    transactions.Add(transaction);
+                    summaries.Add(transaction);
                 }
             }
 
-            Repository.UpdatePointsTransactions(balances);
-
-            return transactions;
+            return summaries;
         }
 
         public IEnumerable<PointsSummary> GetPointsSummaries(string userId)

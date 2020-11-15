@@ -165,7 +165,7 @@ namespace Points.Tests
             });
 
             // Deduct 5,000 points
-            var result = Service.DeletePoints(userId, 5000);
+            var result = Service.DeductPoints(userId, 5000);
 
             var dannonTransaction = result.Where(t => t.PayerName == "DANNON").First();
             Assert.AreEqual(dannonTransaction.Points, -100);
