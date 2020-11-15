@@ -18,7 +18,7 @@ namespace Points.Tests
         {
             var services = new ServiceCollection();
             services.AddTransient<IPointsTransactionRepository, PointsTransactionSqlRepository>();
-            services.AddTransient<IDbContext, SQLiteDbContext>();
+            services.AddSingleton<IDbContext, SQLiteDbContext>();
             services.AddTransient<IPointsService, PointsService>();
 
             var provider = services.BuildServiceProvider();
@@ -54,6 +54,44 @@ namespace Points.Tests
             // Balance should be reduced
             var balance = Service.GetPointsSummaries(userId);
             Assert.AreEqual(balance.First().TotalPoints, 200);
+        }
+
+        [Test]
+        public void Test_AddNegativePointsWithMultipleCompanies()
+        {
+            string userId = "user";
+
+            // Add points to make a positive balance with two different companies
+            Service.AddPoints(userId, new PointsTransaction()
+            {
+                UserId = userId,
+                PayerName = "DANNON",
+                Points = 20,
+                TransactionDate = new DateTime(2020, 10, 31, 10, 30, 0)
+            });
+
+            Service.AddPoints(userId, new PointsTransaction()
+            {
+                UserId = userId,
+                PayerName = "UNILEVER",
+                Points = 200,
+                TransactionDate = new DateTime(2020, 10, 31, 11, 0, 0)
+            });
+
+            Service.AddPoints(userId, new PointsTransaction()
+            {
+                UserId = userId,
+                PayerName = "UNILEVER",
+                Points =-20,
+                TransactionDate = new DateTime(2020, 10, 31, 11, 30, 0)
+            });
+
+
+            // Balance should be reduced for Unilever only
+            var balance = Service.GetPointsSummaries(userId);
+            var uniLever = balance.Where(b => b.PayerName == "UNILEVER").FirstOrDefault();
+
+            Assert.AreEqual(uniLever.TotalPoints, 180);
         }
 
         [Test]

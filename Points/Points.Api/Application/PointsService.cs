@@ -29,7 +29,9 @@ namespace Points.Application
                 // Actually a deduction operation
                 int totalDeduction = -transaction.Points;
 
-                var transactions = Repository.GetPointsTransactionsByUserId(userId).OrderBy(b => b.TransactionDate).ToArray();
+                var transactions = Repository.GetPointsTransactionsByUserId(userId)
+                    .Where(b => b.PayerName == transaction.PayerName)
+                    .OrderBy(b => b.TransactionDate).ToArray();
 
                 int balanceIndex = 0;
                 while (totalDeduction > 0)
@@ -63,7 +65,8 @@ namespace Points.Application
 
         public IEnumerable<PointsTransaction> DeletePoints(string userId, int amount)
         {
-            var balances = Repository.GetPointsTransactionsByUserId(userId).OrderBy(b => b.TransactionDate).ToArray();
+            var balances = Repository.GetPointsTransactionsByUserId(userId)
+                .OrderBy(b => b.TransactionDate).ToArray();
             
             var transactions = new List<PointsTransaction>();
 
