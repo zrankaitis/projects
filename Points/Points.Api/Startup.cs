@@ -11,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
 using Points.Application;
+using Points.Application.Data;
 
 namespace Points
 {
@@ -26,19 +27,19 @@ namespace Points
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddMemoryCache();
             services.AddControllers();
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "Points", Version = "v1" });
             });
 
-            services.AddTransient<IPointsRepository, PointsRepository>();
+            services.AddTransient<IPointsTransactionRepository, PointsTransactionSqlRepository>();
             services.AddTransient<IPointsService, PointsService>();
+            services.AddSingleton<IDbContext, SQLiteDbContext>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env, IPointsTransactionRepository transactionRepository)
         {
             if (env.IsDevelopment())
             {
@@ -55,6 +56,8 @@ namespace Points
             {
                 endpoints.MapControllers();
             });
+
+            transactionRepository.CreateSchema();
         }
     }
 }

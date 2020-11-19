@@ -1,4 +1,5 @@
-﻿using Points.Application.Exceptions;
+﻿using Points.Application.Data;
+using Points.Application.Exceptions;
 using Points.Models;
 using System;
 using System.Collections.Generic;
@@ -9,9 +10,9 @@ namespace Points.Application
 {
     public class PointsService : IPointsService
     {
-        private IPointsRepository Repository { get; set; }
+        private IPointsTransactionRepository Repository { get; set; }
 
-        public PointsService(IPointsRepository repository)
+        public PointsService(IPointsTransactionRepository repository)
         {
             Repository = repository;
         }
@@ -21,56 +22,48 @@ namespace Points.Application
             if (transaction.Points == 0)
                 return;
 
-            var balances = (IList<PointsTransaction>)Repository.GetPointsTransactionsByUserId(userId);
-
-            if (balances == null)
-                balances = new List<PointsTransaction>();
-
             if (transaction.Points > 0)
-                balances.Add(transaction);
+                Repository.InsertPointsTransaction(transaction);
             else
             {
-                int amountToDeduct = -transaction.Points;
+                // Actually a deduction operation
+                int totalDeduction = -transaction.Points;
 
-                var payerBalances = balances.Where(b => b.PayerName == transaction.PayerName).OrderBy(b => b.TransactionDate).ToArray();
+                var transactions = Repository.GetPointsTransactionsByUserId(userId)
+                    .Where(b => b.PayerName == transaction.PayerName)
+                    .OrderBy(b => b.TransactionDate).ToArray();
 
-                int balanceIndex = 0;
-                while(amountToDeduct > 0)
-                {
-                    // Potential for refactoring here as this is largely the same logic as DeletePoints()
-                    if (balanceIndex >= payerBalances.Length)
-                        throw new InsufficientBalanceException();
-                    
-                    var oldestBalance = balances[balanceIndex];
+                DeductPointsFromTransactionArray(transactions, userId, -transaction.Points);
 
-                    if (oldestBalance == null)
-                        throw new InsufficientBalanceException();
-
-                    balanceIndex += 1;
-
-                    if (oldestBalance.Points > amountToDeduct)
-                    {
-                        oldestBalance.Points -= amountToDeduct;
-                        amountToDeduct = 0;
-                    } else
-                    {
-                        amountToDeduct -= oldestBalance.Points;
-                        oldestBalance.Points = 0; // 0 balances should be preserved, per Unilever example 
-                    }
-                } 
+                Repository.UpdatePointsTransactions(transactions);
             }
-
-            Repository.UpdatePointsBalanceByUserId(userId, balances);
         }
 
-        public IEnumerable<PointsTransaction> DeletePoints(string userId, int amount)
+        public IEnumerable<PointsTransaction> DeductPoints(string userId, int amount)
         {
-            var balances = Repository.GetPointsTransactionsByUserId(userId).OrderBy(b => b.TransactionDate).ToArray();
-            
-            var transactions = new List<PointsTransaction>();
+            var balances = Repository.GetPointsTransactionsByUserId(userId)
+                .OrderBy(b => b.TransactionDate).ToArray();
+
+            var transactions = DeductPointsFromTransactionArray(balances, userId, amount);
+
+            Repository.UpdatePointsTransactions(balances);
+
+            return transactions;
+        }
+
+        /// <summary>
+        /// Helper function to deduct points from a sorted array of PointsTransaction.
+        /// </summary>
+        /// <param name="balances">A sorted array of transactions from which to perform the delete operation on.</param>
+        /// <param name="userId">The UserId associated with transactions to be deleted.</param>
+        /// <param name="amount">The amount to deduct.</param>
+        /// <returns>Returns a list of transactions that the deduction operation affected.</returns>
+        private IEnumerable<PointsTransaction> DeductPointsFromTransactionArray(PointsTransaction[] balances, string userId, int amount)
+        {
+            var summaries = new List<PointsTransaction>();
 
             int balanceIndex = 0;
-            while(amount > 0)
+            while (amount > 0)
             {
                 if (balanceIndex >= balances.Length)
                     throw new InsufficientBalanceException();
@@ -85,6 +78,7 @@ namespace Points.Application
                 var transaction = new PointsTransaction()
                 {
                     PayerName = oldestBalance.PayerName,
+                    UserId = userId,
                     TransactionDate = DateTime.UtcNow
                 };
 
@@ -92,45 +86,44 @@ namespace Points.Application
                 {
                     transaction.Points = -amount;
                     oldestBalance.Points -= amount;
-                    transactions.Add(transaction);
+                    summaries.Add(transaction);
                     amount = 0;
-                } else
+                }
+                else
                 {
                     amount -= oldestBalance.Points;
                     transaction.Points = -oldestBalance.Points;
                     oldestBalance.Points = 0; // 0 balances should be preserved, per Unilever example 
-                    transactions.Add(transaction);
+                    summaries.Add(transaction);
                 }
             }
 
-            Repository.UpdatePointsBalanceByUserId(userId, balances.ToList());
-
-            return transactions;
+            return summaries;
         }
 
         public IEnumerable<PointsSummary> GetPointsSummaries(string userId)
         {
-            var balances = Repository.GetPointsTransactionsByUserId(userId);
+            var transactions = Repository.GetPointsTransactionsByUserId(userId);
 
-            if (balances == null)
-                balances = new List<PointsTransaction>();
+            if (transactions == null)
+                transactions = new List<PointsTransaction>();
 
             // Points are stored in the persistence layer as PointsTransactions, 
             // but this endpoint needs to aggregate the existing transactions into 
             // a list of PointsSummary objects which only contain the data useful to users.
             var summaries = new Dictionary<string, PointsSummary>();
-            foreach (var balance in balances)
+            foreach (var transaction in transactions)
             {
-                if (summaries.ContainsKey(balance.PayerName))
+                if (summaries.ContainsKey(transaction.PayerName))
                 {
-                    summaries[balance.PayerName].TotalPoints += balance.Points;
+                    summaries[transaction.PayerName].TotalPoints += transaction.Points;
                 }
                 else
                 {
-                    summaries[balance.PayerName] = new PointsSummary()
+                    summaries[transaction.PayerName] = new PointsSummary()
                     {
-                        PayerName = balance.PayerName,
-                        TotalPoints = balance.Points
+                        PayerName = transaction.PayerName,
+                        TotalPoints = transaction.Points
                     };
                 }
             }

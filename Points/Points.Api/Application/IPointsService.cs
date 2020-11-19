@@ -10,6 +10,6 @@ namespace Points.Application
     {
         IEnumerable<PointsSummary> GetPointsSummaries(string userId);
         void AddPoints(string userId, PointsTransaction transaction);
-        IEnumerable<PointsTransaction> DeletePoints(string userId, int amount);
+        IEnumerable<PointsTransaction> DeductPoints(string userId, int amount);
     }
 }

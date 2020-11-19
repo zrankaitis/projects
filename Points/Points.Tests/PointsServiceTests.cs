@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Points.Application;
+using Points.Application.Data;
 using Points.Application.Exceptions;
 using Points.Models;
 using System;
@@ -16,13 +17,15 @@ namespace Points.Tests
         public void Setup()
         {
             var services = new ServiceCollection();
-            services.AddMemoryCache();
-            services.AddTransient<IPointsRepository, PointsRepository>();
+            services.AddTransient<IPointsTransactionRepository, PointsTransactionSqlRepository>();
+            services.AddSingleton<IDbContext, SQLiteDbContext>();
             services.AddTransient<IPointsService, PointsService>();
 
             var provider = services.BuildServiceProvider();
 
             Service = (PointsService)provider.GetRequiredService<IPointsService>();
+            var repository = provider.GetRequiredService<IPointsTransactionRepository>();
+            repository.CreateSchema();
         }
 
         [Test]
@@ -33,6 +36,7 @@ namespace Points.Tests
             // Add points to make a positive balance
             Service.AddPoints(userId, new PointsTransaction()
             {
+                UserId = userId,
                 PayerName = "DANNON",
                 Points = 300,
                 TransactionDate = new DateTime(2020, 10, 31, 10, 30, 0)
@@ -41,6 +45,7 @@ namespace Points.Tests
             // Add negative points
             Service.AddPoints(userId, new PointsTransaction()
             {
+                UserId = userId,
                 PayerName = "DANNON",
                 Points = -100,
                 TransactionDate = new DateTime(2020, 10, 31, 10, 30, 0)
@@ -52,6 +57,44 @@ namespace Points.Tests
         }
 
         [Test]
+        public void Test_AddNegativePointsWithMultipleCompanies()
+        {
+            string userId = "user";
+
+            // Add points to make a positive balance with two different companies
+            Service.AddPoints(userId, new PointsTransaction()
+            {
+                UserId = userId,
+                PayerName = "DANNON",
+                Points = 20,
+                TransactionDate = new DateTime(2020, 10, 31, 10, 30, 0)
+            });
+
+            Service.AddPoints(userId, new PointsTransaction()
+            {
+                UserId = userId,
+                PayerName = "UNILEVER",
+                Points = 200,
+                TransactionDate = new DateTime(2020, 10, 31, 11, 0, 0)
+            });
+
+            Service.AddPoints(userId, new PointsTransaction()
+            {
+                UserId = userId,
+                PayerName = "UNILEVER",
+                Points =-20,
+                TransactionDate = new DateTime(2020, 10, 31, 11, 30, 0)
+            });
+
+
+            // Balance should be reduced for Unilever only
+            var balance = Service.GetPointsSummaries(userId);
+            var uniLever = balance.Where(b => b.PayerName == "UNILEVER").FirstOrDefault();
+
+            Assert.AreEqual(uniLever.TotalPoints, 180);
+        }
+
+        [Test]
         public void Test_AddNegativePointsBeyondBalanceProducesError()
         {
             string userId = "user";
@@ -59,6 +102,7 @@ namespace Points.Tests
             // Add points to make a positive balance
             Service.AddPoints(userId, new PointsTransaction()
             {
+                UserId = userId,
                 PayerName = "DANNON",
                 Points = 100,
                 TransactionDate = new DateTime(2020, 10, 31, 10, 30, 0)
@@ -70,8 +114,10 @@ namespace Points.Tests
 
         private void AddNegativePointsDelegate()
         {
-            Service.AddPoints("user", new PointsTransaction()
+            string userId = "user";
+            Service.AddPoints(userId, new PointsTransaction()
             {
+                UserId = userId,
                 PayerName = "DANNON",
                 Points = -200,
                 TransactionDate = new DateTime(2020, 10, 31, 10, 30, 0)
@@ -84,13 +130,15 @@ namespace Points.Tests
             string userId = "user";
 
             // Add a series of points from varying companies
-            Service.AddPoints(userId, new PointsTransaction() { 
+            Service.AddPoints(userId, new PointsTransaction() {
+                UserId = userId,
                 PayerName = "DANNON",
                 Points = 300,
                 TransactionDate = new DateTime(2020,10,31,10,30,0)
             });
             Service.AddPoints(userId, new PointsTransaction()
             {
+                UserId = userId,
                 PayerName = "UNILEVER",
                 Points = 200,
                 TransactionDate = new DateTime(2020, 10, 31, 11, 0, 0)
@@ -103,19 +151,21 @@ namespace Points.Tests
             });
             Service.AddPoints(userId, new PointsTransaction()
             {
+                UserId = userId,
                 PayerName = "MILLER COORS",
                 Points = 10000,
                 TransactionDate = new DateTime(2020, 11, 1, 14, 0, 0)
             });
             Service.AddPoints(userId, new PointsTransaction()
             {
+                UserId = userId,
                 PayerName = "DANNON",
                 Points = 1000,
                 TransactionDate = new DateTime(2020, 11, 2, 14, 0, 0)
             });
 
             // Deduct 5,000 points
-            var result = Service.DeletePoints(userId, 5000);
+            var result = Service.DeductPoints(userId, 5000);
 
             var dannonTransaction = result.Where(t => t.PayerName == "DANNON").First();
             Assert.AreEqual(dannonTransaction.Points, -100);
